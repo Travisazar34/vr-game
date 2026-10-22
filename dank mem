@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vault 1849 - VR Escape Room</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:Georgia,serif}
+#intro{position:fixed;inset:0;background:#000;color:#ddd;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;z-index:5}
+#intro h1{color:#e33;letter-spacing:.12em;font-size:2.4em}
+#intro p{max-width:560px;line-height:1.5}
+#intro button{margin-top:18px;padding:12px 28px;font-size:18px;cursor:pointer}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<div id="intro">
+<h1>THE HEIST FAILED</h1>
+<p>The alarm tripped. The vault sealed behind you. Enforcers are on their way and you have 10 minutes.<br>Think outside the box.</p>
+<p style="font-size:14px;color:#888">Desktop: click Start, then WASD + mouse, click to interact, H = hint.<br>VR: press "Enter VR", left stick = move, trigger = interact, grip = hint.</p>
+<button id="go">Start (desktop)</button>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import {VRButton} from 'three/addons/webxr/VRButton.js';
+const V=THREE.Vector3, PI=Math.PI;
+
+/* ---------- setup ---------- */
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(devicePixelRatio);renderer.setSize(innerWidth,innerHeight);renderer.xr.enabled=true;
+document.body.appendChild(renderer.domElement);
+const vrb=VRButton.createButton(renderer);vrb.style.zIndex=10;document.body.appendChild(vrb);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x0a0c12);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.05,50);camera.position.y=1.6;
+const rig=new THREE.Group();rig.position.set(0,0,5);rig.add(camera);scene.add(rig);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+/* ---------- helpers ---------- */
+const cv=(w,h,f)=>{const c=document.createElement('canvas');c.width=w;c.height=h;f(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=8;return t;};
+const speck=(base,veins)=>cv(512,512,(g,w,h)=>{g.fillStyle=base;g.fillRect(0,0,w,h);
+ for(let i=0;i<4000;i++){g.fillStyle=Math.random()<.5?'rgba(0,0,0,.08)':'rgba(255,255,255,.08)';g.fillRect(Math.random()*w,Math.random()*h,2,2);}
+ g.strokeStyle='rgba(40,50,80,.35)';for(let i=0;i<veins;i++){g.beginPath();let x=Math.random()*w,y=Math.random()*h;g.moveTo(x,y);for(let k=0;k<6;k++){x+=Math.random()*80-40;y+=Math.random()*80-40;g.lineTo(x,y);}g.stroke();}});
+const rep=(t,x,y)=>{t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(x,y);return t;};
+const std=o=>new THREE.MeshStandardMaterial(o);
+const P=(w,h,m)=>new THREE.Mesh(new THREE.PlaneGeometry(w,h),m);
+const add=(m,x,y,z,rx=0,ry=0)=>{m.position.set(x,y,z);m.rotation.set(rx,ry,0);scene.add(m);return m;};
+const targets=[];
+const tag=(o,fn)=>{o.traverse(m=>{if(m.isMesh){m.userData.act=fn;targets.push(m);}});return o;};
+const vis=m=>{for(let o=m;o;o=o.parent)if(!o.visible)return false;return true;};
+
+/* ---------- room ---------- */
+const W=10,D=14,H=3.4;
+const floorM=std({map:rep(speck('#c9cfe6',25),5,7),roughness:.35});
+const wallM=std({map:rep(speck('#8f9bb8',0),4,2),roughness:.9});
+add(P(W,D,floorM),0,0,0,-PI/2);
+add(P(W,D,std({color:0x8a8f99,roughness:.9})),0,H,0,PI/2);
+add(P(W,H,wallM),0,H/2,-D/2);add(P(W,H,wallM),0,H/2,D/2,0,PI);
+add(P(D,H,wallM),-W/2,H/2,0,0,PI/2);add(P(D,H,wallM),W/2,H/2,0,0,-PI/2);
+const trim=std({color:0x0d0f16});
+add(new THREE.Mesh(new THREE.BoxGeometry(W,.12,.05),trim),0,.06,-D/2+.03);
+add(new THREE.Mesh(new THREE.BoxGeometry(W,.12,.05),trim),0,.06,D/2-.03);
+add(new THREE.Mesh(new THREE.BoxGeometry(.05,.12,D),trim),-W/2+.03,.06,0);
+add(new THREE.Mesh(new THREE.BoxGeometry(.05,.12,D),trim),W/2-.03,.06,0);
+// floor decal: ring, square and "Est. 1849"
+const decal=cv(1024,1024,g=>{g.translate(512,512);g.strokeStyle='rgba(60,70,105,.5)';g.lineWidth=60;g.beginPath();g.arc(0,0,420,0,7);g.stroke();
+ g.fillStyle='rgba(80,90,125,.45)';g.fillRect(-190,-330,380,380);g.fillStyle='#fff';g.fillRect(-35,-175,70,70);
+ g.fillStyle='#3a4160';g.font='bold 120px Georgia';g.textAlign='center';g.fillText('Est. 1849',0,170);});
+add(P(7,7,std({map:decal,transparent:true,roughness:.4})),0,.01,.5,-PI/2);
+scene.add(new THREE.HemisphereLight(0xdfe8ff,0x556070,1.7));
+[-4,0,4].forEach(z=>{const l=new THREE.PointLight(0xdde6ff,18,12);l.position.set(0,3.1,z);scene.add(l);});
+const alarm=new THREE.PointLight(0xff2020,0,14);alarm.position.set(0,3,0);scene.add(alarm);
+
+/* ---------- gold / cash shelves (743 hidden in the west shelf) ---------- */
+const FONT={7:['11111','00001','00010','00100','01000','01000','01000'],
+ 4:['00010','00110','01010','10010','11111','00010','00010'],
+ 3:['01110','10001','00001','00110','00001','10001','01110']};
+const goldM=std({color:0xd8a520,metalness:.8,roughness:.3}),cashM=std({color:0x2e8b3a,roughness:.7}),frameM=std({color:0x4a5878,metalness:.5,roughness:.5});
+function shelf(x,a,code){ // a=+1 aisle is east of shelf (west shelf), -1 otherwise
+ const s=.3,lit=new Set(),g=[],c=[],o=new THREE.Object3D();
+ if(code)[...code].forEach((d,i)=>FONT[d].forEach((r,y)=>[...r].forEach((v,xx)=>v==='1'&&lit.add((3+i*6+xx)+','+y))));
+ for(let cx=0;cx<24;cx++)for(let ry=0;ry<7;ry++){
+  const gold=lit.has(cx+','+ry)||Math.random()<(code?.07:.3);
+  const z=a>0?3.1-(cx+.5)*s:-4.1+(cx+.5)*s;(gold?g:c).push([x,.25+(7-ry-.5)*s,z]);}
+ [[g,goldM],[c,cashM]].forEach(([arr,m])=>{if(!arr.length)return;const im=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,.27,.28),m,arr.length);
+  arr.forEach((p,i)=>{o.position.set(...p);o.updateMatrix();im.setMatrixAt(i,o.matrix);});scene.add(im);});
+ const fr=(w,h,d,px,py,pz)=>add(new THREE.Mesh(new THREE.BoxGeometry(w,h,d),frameM),px,py,pz);
+ fr(.64,.05,7.3,x,.22,-.5);fr(.64,.05,7.3,x,2.42,-.5);
+ [-4.1,-1.7,.7,3.1].forEach(z=>fr(.06,2.3,.06,x+a*.3,1.32,z));
+}
+shelf(-3.4,1,'743');   // code shelf (west)
+shelf(3.4,-1,null);    // decoy shelf (east)
+[[1.2,1.3],[-1.6,-2.4]].forEach(([x,z],i)=>add(new THREE.Mesh(new THREE.BoxGeometry(.3,.1,.14),i?cashM:goldM),x,.06,z,0,i+.5));
+
+/* ---------- lockers 1701-1868 on the north wall ---------- */
+const COLS=15,ROWS=12,N=168,CW=120,CH=78,OPEN=1849-1701;
+const lockT=cv(COLS*CW,ROWS*CH,()=>{});const lg=lockT.image.getContext('2d');
+let unlocked=false;
+function cell(i,mode){const c=i%COLS,r=(i/COLS)|0,x=c*CW,y=r*CH;
+ if(i>=N){lg.fillStyle='#2f3a52';lg.fillRect(x,y,CW,CH);return;}
+ lg.fillStyle=mode===2?'#10131c':'#7d8aa6';lg.fillRect(x,y,CW,CH);
+ lg.strokeStyle='#33405c';lg.lineWidth=6;lg.strokeRect(x+3,y+3,CW-6,CH-6);
+ if(mode!==2){lg.fillStyle='#d5dbe8';lg.fillRect(x+34,y+8,52,22);lg.fillStyle='#111';lg.font='bold 19px Georgia';lg.textAlign='center';lg.fillText(1701+i,x+60,y+25);
+  lg.fillStyle='#e4e9f4';lg.fillRect(x+30,y+54,60,9);lg.fillStyle='#222';for(let k=0;k<3;k++)lg.fillRect(x+86+k*5,y+34,3,16);}
+ if(mode===1){lg.strokeStyle='#fff';lg.lineWidth=5;lg.strokeRect(x+2,y+2,CW-4,CH-4);}
+}
+for(let i=0;i<COLS*ROWS;i++)cell(i,0);lockT.needsUpdate=true;
+const wall=add(P(COLS*.4,ROWS*.26,std({map:lockT,roughness:.6})),0,1.64,-6.97);wall.userData.wall=true;targets.push(wall);
+const idxOf=uv=>Math.floor((1-uv.y)*ROWS)*COLS+Math.min(COLS-1,Math.floor(uv.x*COLS));
+
+/* ---------- keypad ---------- */
+const pad=new THREE.Group();pad.position.set(2.4,1.35,-6.5);pad.visible=false;scene.add(pad);
+let entry='';
+const scrT=cv(256,96,()=>{});const sg=scrT.image.getContext('2d');
+function drawEntry(col='#6f6'){sg.fillStyle='#050805';sg.fillRect(0,0,256,96);sg.fillStyle=col;sg.font='bold 64px monospace';sg.textAlign='center';sg.fillText((entry+'___').slice(0,3).split('').join(' '),128,68);scrT.needsUpdate=true;}
+const bk=P(.6,.85,std({color:0x1b2030}));bk.position.set(0,.14,-.01);pad.add(bk);
+const scr=P(.5,.19,new THREE.MeshBasicMaterial({map:scrT}));scr.position.set(0,.42,.005);pad.add(scr);
+['1','2','3','4','5','6','7','8','9','C','0','OK'].forEach((k,i)=>{
+ const t=cv(96,72,(g)=>{g.fillStyle='#8c97b5';g.fillRect(0,0,96,72);g.fillStyle='#111';g.font='bold 42px Georgia';g.textAlign='center';g.fillText(k,48,52);});
+ const b=P(.15,.11,new THREE.MeshBasicMaterial({map:t}));b.position.set((i%3-1)*.17,.22-((i/3)|0)*.13,.01);pad.add(b);tag(b,()=>press(k));});
+
+/* ---------- key + vault door ---------- */
+const key=new THREE.Group();
+const ring=new THREE.Mesh(new THREE.TorusGeometry(.05,.015,8,16),goldM);ring.position.y=.1;
+const shaft=new THREE.Mesh(new THREE.BoxGeometry(.025,.16,.02),goldM);
+const tooth=new THREE.Mesh(new THREE.BoxGeometry(.05,.03,.02),goldM);tooth.position.set(.03,-.06,0);
+key.add(ring,shaft,tooth);key.position.set(2.4,.74,-6.8);key.scale.setScalar(1.6);key.visible=false;scene.add(key);
+const door=new THREE.Group();door.position.set(0,1.5,6.88);
+const dm=std({color:0x3b4254,metalness:.8,roughness:.35});
+const wheel=new THREE.Mesh(new THREE.TorusGeometry(.4,.045,8,24),goldM);wheel.position.z=-.1;
+const hole=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,.06,16).rotateX(PI/2),goldM);hole.position.set(0,-.65,-.08);
+door.add(new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,.12,48).rotateX(PI/2),dm),wheel,hole);scene.add(door);
+add(new THREE.Mesh(new THREE.CircleGeometry(1.2,32),new THREE.MeshBasicMaterial({color:0xffffff})),0,1.5,6.95,0,PI);
+
+/* ---------- HUD, banner, audio ---------- */
+const black=new THREE.Mesh(new THREE.SphereGeometry(5,16,8),new THREE.MeshBasicMaterial({color:0,side:THREE.BackSide,depthTest:false,transparent:true}));
+black.renderOrder=990;black.visible=false;
+const hudT=cv(1024,512,()=>{}),hg=hudT.image.getContext('2d'),banT=cv(1024,512,()=>{}),bg=banT.image.getContext('2d');
+const ovl=(t,w,h,ro)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:t,transparent:true,depthTest:false}));m.position.z=-1.4;m.renderOrder=ro;return m;};
+const hud=ovl(hudT,1.4,.7,998),ban=ovl(banT,1.6,.8,1000);ban.visible=false;camera.add(black,hud,ban);
+let state='intro',timeLeft=600,msg='',msgUntil=0,hasKey=false,doorOpen=false,hintI=0;
+const say=(t,s=5)=>{msg=t;msgUntil=performance.now()+s*1e3;};
+function drawHud(){hg.clearRect(0,0,1024,512);
+ if(state==='play'){const l=Math.max(0,Math.ceil(timeLeft));hg.font='bold 44px monospace';hg.textAlign='center';hg.fillStyle=l<90?'#ff4040':'#ffd24a';
+  hg.fillText(`ENFORCERS ARRIVE IN ${Math.floor(l/60)}:${String(l%60).padStart(2,'0')}`,512,50);}
+ if(performance.now()<msgUntil){hg.fillStyle='rgba(0,0,0,.7)';hg.fillRect(40,360,944,130);hg.fillStyle='#fff';hg.font='32px Georgia';hg.textAlign='center';
+  const w=msg.split(' ');let line='',y=410;for(const x of w){if((line+x).length>46){hg.fillText(line,512,y);y+=40;line='';}line+=x+' ';}hg.fillText(line,512,y);}
+ hudT.needsUpdate=true;}
+function banner(lines,col){bg.clearRect(0,0,1024,512);bg.textAlign='center';bg.fillStyle=col;bg.font='bold 70px Georgia';bg.fillText(lines[0],512,130);
+ bg.fillStyle='#ddd';bg.font='32px Georgia';lines.slice(1).forEach((l,i)=>bg.fillText(l,512,220+i*50));banT.needsUpdate=true;black.visible=ban.visible=true;}
+let ac;const beep=(f,d=.12,type='square')=>{try{ac??=new AudioContext();const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.value=f;g.gain.value=.05;o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+d);}catch(e){}};
+
+/* ---------- game logic ---------- */
+function begin(){state='play';black.visible=ban.visible=false;timeLeft=600;beep(440,.2);say('Find a way out before the enforcers arrive. H / grip = hint.',7);}
+function press(k){beep(520);
+ if(k==='C')entry='';else if(k!=='OK'&&entry.length<3)entry+=k;
+ if(entry.length===3||k==='OK'){
+  if(entry==='743'){unlocked=true;cell(OPEN,2);lockT.needsUpdate=true;pad.visible=false;key.visible=true;beep(880,.3);say('CLICK! Locker 1849 opens. There is a vault key inside!',6);}
+  else{drawEntry('#f55');beep(150,.3);say('ACCESS DENIED',3);entry='';setTimeout(()=>drawEntry(),600);return;}}
+ drawEntry();}
+tag(key,()=>{hasKey=true;key.visible=false;beep(900,.2);say('You have the VAULT KEY. Now... where is the vault door?',7);});
+tag(door,()=>{if(doorOpen)return;if(!hasKey)return say('The vault door is sealed. It needs a key.');doorOpen=true;beep(300,.6,'sawtooth');say('The vault door grinds open. RUN!',6);});
+const hints=['Look at the floor. What number does it say?','That number is a locker. Find it on the wall of lockers.','Locker 1849 needs a 3-digit code.','The code is hidden in gold bars on one of the shelves. Green cash covers the rest.','Face the west shelf and read only the gold: 7 4 3.','Got the key? The vault door is behind where you started.'];
+const hint=()=>{if(state==='play')say('HINT: '+hints[Math.min(hintI++,hints.length-1)],7);};
+function interact(hit){if(!hit)return;const u=hit.object.userData;
+ if(u.act)return u.act();
+ if(u.wall){const i=idxOf(hit.uv);if(i>=N)return;
+  if(i===OPEN){if(unlocked)return say('Locker 1849 is empty now.');pad.visible=true;entry='';drawEntry();say('Locker 1849 needs a 3-digit code.');}
+  else say(`Locker ${1701+i} is locked and empty. Wrong one.`,3);}}
+
+/* ---------- input ---------- */
+const ray=new THREE.Raycaster();ray.far=9;
+const pickFrom=(o,d)=>{ray.set(o,d);return ray.intersectObjects(targets.filter(vis),false)[0];};
+const _o=new V(),_d=new V(),_m=new THREE.Matrix4();
+function aim(){if(renderer.xr.isPresenting){const c=renderer.xr.getController(1);_m.extractRotation(c.matrixWorld);return{o:_o.setFromMatrixPosition(c.matrixWorld),d:_d.set(0,0,-1).applyMatrix4(_m)};}
+ ray.setFromCamera({x:0,y:0},camera);return{o:ray.ray.origin.clone(),d:ray.ray.direction.clone()};}
+const keys={};let yaw=0,pitch=0;
+addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='KeyH')hint();});addEventListener('keyup',e=>keys[e.code]=0);
+document.addEventListener('mousemove',e=>{if(document.pointerLockElement){yaw-=e.movementX*.0022;pitch=Math.max(-1.4,Math.min(1.4,pitch-e.movementY*.0022));}});
+renderer.domElement.addEventListener('click',()=>{if(state!=='play'||renderer.xr.isPresenting)return;
+ if(!document.pointerLockElement)return renderer.domElement.requestPointerLock();const a=aim();interact(pickFrom(a.o,a.d));});
+document.getElementById('go').onclick=()=>{document.getElementById('intro').style.display='none';begin();renderer.domElement.requestPointerLock();};
+for(let i=0;i<2;i++){const c=renderer.xr.getController(i);rig.add(c);
+ c.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V(),new V(0,0,-3)]),new THREE.LineBasicMaterial({color:0xffffff})));
+ c.addEventListener('selectstart',()=>{if(state==='intro')return begin();if(state!=='play')return;
+  _m.extractRotation(c.matrixWorld);interact(pickFrom(new V().setFromMatrixPosition(c.matrixWorld),new V(0,0,-1).applyMatrix4(_m)));});
+ c.addEventListener('squeezestart',hint);}
+renderer.xr.addEventListener('sessionstart',()=>{document.getElementById('intro').style.display='none';
+ if(state==='intro'){banner(['THE HEIST FAILED','The alarm tripped and the vault sealed.','Enforcers are coming. You have 10 minutes.','Think outside the box.','(Press trigger to begin)'],'#e33');setTimeout(()=>state==='intro'&&begin(),14000);}});
+
+function move(dt){let fx=0,fz=0;
+ if(renderer.xr.isPresenting){for(const s of renderer.xr.getSession().inputSources){const a=s.gamepad&&s.gamepad.axes;if(a&&s.handedness==='left'&&a.length>=4){fx=Math.abs(a[2])>.15?a[2]:0;fz=Math.abs(a[3])>.15?-a[3]:0;}}}
+ else{fx=(keys.KeyD||0)-(keys.KeyA||0);fz=(keys.KeyW||0)-(keys.KeyS||0);}
+ const d=new V();camera.getWorldDirection(d);d.y=0;d.normalize();const r=new V(-d.z,0,d.x),p=rig.position;
+ p.addScaledVector(d,fz*dt*2.2).addScaledVector(r,fx*dt*2.2);
+ p.x=Math.max(-4.6,Math.min(4.6,p.x));p.z=Math.max(-6.3,Math.min(6.6,p.z));
+ if(p.z>-4.3&&p.z<3.3)p.x=Math.max(-2.7,Math.min(2.7,p.x));}
+
+/* ---------- loop ---------- */
+let hov=-1,hudT0=0,siren=-1;const clock=new THREE.Clock();
+function hover(){let h=-1;const a=aim(),hit=pickFrom(a.o,a.d);
+ if(hit&&hit.object.userData.wall){const i=idxOf(hit.uv);if(i<N&&!(i===OPEN&&unlocked))h=i;}
+ if(h!==hov){if(hov>=0)cell(hov,0);if(h>=0)cell(h,1);hov=h;lockT.needsUpdate=true;}}
+renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),.1),now=performance.now();
+ if(!renderer.xr.isPresenting)camera.rotation.set(pitch,yaw,0,'YXZ');
+ if(state==='play'){move(dt);timeLeft-=dt;hover();
+  if(timeLeft<=0){state='lost';beep(150,1,'sawtooth');banner(['CAUGHT','The enforcers have breached the vault.','Reload the page to try again.'],'#f44');}
+  const s=Math.floor(now/700);if(timeLeft<90&&s!==siren){siren=s;beep(s%2?700:500,.35,'sawtooth');}
+  alarm.intensity=timeLeft<90?30*(.5+.5*Math.sin(now/150)):0;
+  if(doorOpen&&rig.position.z>6.1&&Math.abs(rig.position.x)<1.3){state='won';const l=Math.ceil(timeLeft);beep(1000,.5,'sine');
+   banner(['YOU ESCAPED','The heist failed... but you got out.',`Time left: ${Math.floor(l/60)}:${String(l%60).padStart(2,'0')}`,'Reload the page to play again.'],'#6f6');}}
+ if(doorOpen)door.position.x+=(3.8-door.position.x)*dt*1.5;
+ key.rotation.y+=dt;
+ if(now-hudT0>250){hudT0=now;drawHud();}
+ renderer.render(scene,camera);});
+</script></body></html>
